@@ -4,9 +4,19 @@ from flask_bootstrap import Bootstrap
 from flask_moment import Moment
 from flask_wtf import FlaskForm
 from wtforms import StringField, SubmitField
+# from wtforms import SelectField
 from wtforms.validators import DataRequired
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+import requests
+
+### Mailgun API Environment Variables
+
+MAILGUN_API_KEY = os.getenv('MAILGUN_API_KEY')
+MAILGUN_DOMAIN = os.getenv('MAILGUN_DOMAIN')
+MAILGUN_API_URL = f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages"
+RECIPIENTS = ['flaskaulasweb@zohomail.com', 'nicolas.silveira@aluno.ifsp.edu.br']
+
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
@@ -44,7 +54,30 @@ class User(db.Model):
 
 class NameForm(FlaskForm):
     name = StringField('What is your name?', validators=[DataRequired()])
+    # role = SelectField('Role?', choices=[], coerce=int)
     submit = SubmitField('Submit')
+
+
+
+def send_registration_email(username):
+
+    print(f"API URL: {MAILGUN_API_URL}", flush=True)
+    print(f"API KEY: {MAILGUN_API_KEY}", flush=True)
+    print(f"DOMAIN URL: {MAILGUN_DOMAIN}", flush=True)
+
+    response = requests.post(
+        MAILGUN_API_URL,
+        auth=("api", MAILGUN_API_KEY),
+        data={
+            "from": f"Flasky App <mailgun@{MAILGUN_DOMAIN}>",
+            "to": RECIPIENTS,
+            "subject": "[Flasky] New User Registered",
+            "text": f"Um novo usuário foi registrado: {username}"
+        }
+    )
+
+    return response
+
 
 
 @app.shell_context_processor
@@ -65,37 +98,54 @@ def internal_server_error(e):
 @app.route('/', methods=['GET', 'POST'])
 def index():
     form = NameForm()
-    if form.validate_on_submit():
-        user = User.query.filter_by(username=form.name.data).first()
-        if user is None:
-            user_role = Role.query.filter_by(name='User').first()
+    default_role = Role.query.filter_by(name='User').first()
+    # form.role.choices = [(role.id, role.name) for role in Role.query.order_by(Role.name).all()]
 
-            if user_role is None:
-                user_role = Role(name='User')
-                db.session.add(user_role)
+    # selected_role = Role.query.get(form.role.data)
+
+    if form.validate_on_submit():
+
+        user = User.query.filter_by(username=form.name.data).first()
+
+        if user is None:
+
+            """if selected_role is None:
+                selected_role = Role(name='User')
+                db.session.add(selected_role)
                 db.session.commit()
 
-            user = User(username=form.name.data, role=user_role)
+            User = User(username=form.name.data, role=selected_role)"""
+            user = User(username=form.name.data, role=default_role)
             db.session.add(user)
             db.session.commit()
+
+            send_registration_email(user.username)
+
             session['known'] = False
+
+
         else:
-            if user.role is None:
-                user_role = Role.query.filter_by(name='User').first()
 
-                if user_role is None:
-                    user_role = Role(name='User')
-                    db.session.add(user_role)
-                    db.session.commit()
+            """if user.role is None:
 
-                user.role = user_role
+                selected_role = Role.query.get(form.role.data)
+                user.role = selected_role
                 db.session.commit()
 
+            if user.role != selected_role:
+                user.role = selected_role
+                db.session.commit()"""
+
             session['known'] = True
+
         session['name'] = form.name.data
+
         return redirect(url_for('index'))
 
     users = User.query.all()
+    # roles = Role.query.all()
+
+    # return render_template('index.html', form=form, name=session.get('name'), known=session.get('known', False), users=users, roles=roles)
 
     return render_template('index.html', form=form, name=session.get('name'),
                            known=session.get('known', False), users=users)
